@@ -475,66 +475,44 @@ details.topic#t3 .tbody>.bg{column-span:all;max-width:90ch}
 </main>
 <div id="tip"></div>
 <script>
-/* =====================================================================
-   VIEW C  -  HOW THIS FILE IS ORGANISED  (read it top to bottom)
-   =====================================================================
-   PART A   DATA AND CALCULATIONS  (no drawing yet)
-     A1  DATA          counts per project and year, prepared in Python from transactions.csv
-     A2  Tooltip       one small box that follows the mouse
-     A3  Calculations  counts -> shares, each project's peak year, project order
-     A4  Wave test     shuffle test: do projects rise and fall smoothly, more than chance?
-     A5  Headlines     the numbers quoted in the text, all computed from the data
+/* View C: dashboard of apartment projects x years, plus land plots sold per year.
+   Uses D3 v7 (copied into this file so it works offline).
 
-   PART B   THE THREE DISCOVERIES  (cards at the top of the page)
+   Order of the file:
+   1. data and calculations (shares, peak years, shuffle test, headline numbers)
+   2. the three discovery cards at the top of the page
+   3. the dashboard: the state object, build() which draws the heatmap, and the "behind the data" text
 
-   PART C   THE DASHBOARD
-     C1  state         one object that remembers what the user chose
-     C2  build()       draws the heatmap and everything linked to it. It contains:
-           layout, colour scale, static layers, rows, sorting, land bars,
-           the jump from a card to its chart, legend, selection and linking, evidence table
-     C3  Behind the data   the collapsible explanations at the bottom
+   How it works: a click on a row or a year changes the state object,
+   then render() redraws everything that depends on it. */
 
-   D3 IN THREE LINES (the part to understand for the presentation)
-     d3.select("#hm")                    picks an element on the page
-     .selectAll("rect").data(rows)       pairs each data item with one rectangle
-     .join("rect").attr("x", ...)        creates / updates / removes the rectangles
-                                         and sets each one's look from its data
-     Scales (d3.scaleBand, d3.scaleSqrt) turn data values into pixel positions and colours.
-
-   HOW A CLICK FLOWS (the one idea behind part C)
-     click a row or a year  ->  state changes (C1)  ->  render() redraws what depends on it
-     nothing is drawn "by hand" twice: the data decides the look, state decides what is highlighted
-   ===================================================================== */
-
-// ============================================================
-// A1  DATA: counts per project and year, prepared in Python from transactions.csv
-// ============================================================
-// years        = 2015 to 2026 (2026 is a part year, to 31 Aug)
-// totApt/totLand = ALL flat sales / land plots per year (the denominators for shares)
-// aptNoProj/landNoProj = sales with no project name, per year
-// rows[]       = one item per project: id, name, kind ("apt" or "land"), comm / commName (community),
-//                apt[] = flat sales per year, land[] = land plots per year
+// ---------- data ----------
+// counts per project and year, prepared in Python from transactions.csv
+// years = 2015 to 2026 (2026 stops at 31 Aug)
+// totApt, totLand = all flat sales / land plots in each year
+// aptNoProj, landNoProj = sales with no project name, per year
+// rows = one item per project: id, name, kind ("apt" or "land"), comm / commName (community),
+//   apt[] = flat sales per year, land[] = land plots per year
 const DATA = {"years":[2015,2016,2017,2018,2019,2020,2021,2022,2023,2024,2025,2026],"landNoProj":[19,24,14,19,25,21,27,86,155,223,618,186],"aptNoProj":[74,36,79,47,68,53,87,173,202,808,941,296],"totApt":[1325,1258,1421,1081,1175,1082,1771,3215,4611,6870,8300,4233],"totLand":[159,297,194,106,77,85,312,643,668,779,1109,349],"rows":[{"id":"AL FURJAN","name":"Al Furjan","kind":"apt","comm":591,"commName":"Jabal Ali First","apt":[5,73,33,9,6,12,20,80,55,114,108,47],"land":[15,10,2,4,0,2,44,77,26,20,18,4]},{"id":"ARJAN","name":"Arjan","kind":"apt","comm":673,"commName":"Al Barsha South Third","apt":[24,10,60,29,33,38,42,140,216,238,172,121],"land":[1,2,5,1,0,0,2,2,1,2,2,0]},{"id":"BUSINESS BAY","name":"Business Bay","kind":"apt","comm":346,"commName":"Business Bay","apt":[87,47,81,64,57,51,155,350,349,391,522,119],"land":[1,1,2,0,0,0,1,0,0,0,0,0]},{"id":"CITY WALK","name":"City Walk","kind":"apt","comm":343,"commName":"Al Wasl","apt":[0,55,36,2,7,4,7,52,48,71,68,19],"land":[0,0,0,0,0,0,0,0,0,0,0,0]},{"id":"DAMAC HILLS","name":"Damac Hills","kind":"apt","comm":676,"commName":"Al Hebiah Third","apt":[44,12,23,15,17,18,33,58,61,61,89,30],"land":[0,1,0,0,0,7,32,9,22,17,18,7]},{"id":"DISCOVERY GARDENS","name":"Discovery Gardens","kind":"apt","comm":591,"commName":"Jabal Ali First","apt":[26,15,22,22,16,12,22,19,47,81,64,40],"land":[0,0,0,0,0,0,0,0,1,0,0,0]},{"id":"DMCC MASTER COMMUNITY","name":"DMCC (JLT)","kind":"apt","comm":393,"commName":"Al Thanyah Fifth","apt":[51,44,38,27,46,44,120,87,200,224,185,39],"land":[0,0,0,0,0,0,0,1,0,1,0,0]},{"id":"DOWN TOWN JABAL ALI","name":"Downtown Jebel Ali","kind":"apt","comm":518,"commName":"Jabal Ali Industrial Second","apt":[1,1,12,2,1,4,4,8,11,26,47,89],"land":[0,0,0,0,0,0,0,1,1,1,0,0]},{"id":"DOWNTOWN DUBAI","name":"Downtown Dubai","kind":"apt","comm":345,"commName":"Burj Khalifa","apt":[74,92,64,81,107,70,103,226,206,187,193,73],"land":[0,0,0,0,1,0,0,0,0,0,0,0]},{"id":"DUBAI CREEK HARBOUR","name":"Dubai Creek Harbour","kind":"apt","comm":415,"commName":"Al Kheeran First","apt":[24,42,67,27,85,44,36,183,236,189,192,98],"land":[0,0,0,0,0,0,0,0,0,0,0,0]},{"id":"DUBAI HARBOUR","name":"Dubai Harbour","kind":"apt","comm":392,"commName":"Marsa Dubai","apt":[0,0,0,5,36,24,103,99,178,82,63,22],"land":[0,0,0,0,0,0,0,0,0,0,0,0]},{"id":"DUBAI HEALTH CARE CITY PHASE 2","name":"Healthcare City Ph. 2","kind":"apt","comm":326,"commName":"Al Jadaf","apt":[0,0,24,3,7,15,37,43,40,55,80,29],"land":[0,0,1,0,0,0,0,0,2,0,0,0]},{"id":"DUBAI HILLS ESTATE","name":"Dubai Hills","kind":"apt","comm":631,"commName":"Hadaeq Sheikh Mohammed Bin Rashid","apt":[13,8,47,32,85,31,35,132,219,325,182,56],"land":[0,0,0,0,0,0,0,0,0,0,0,3]},{"id":"DUBAI LAND RESIDENCE COMPLEX","name":"Dubai Land Residence Complex","kind":"apt","comm":648,"commName":"Wadi Al Safa 5","apt":[25,19,9,10,6,26,15,28,104,228,404,251],"land":[2,1,0,2,0,0,1,2,4,1,6,0]},{"id":"DUBAI MARINA","name":"Dubai Marina","kind":"apt","comm":392,"commName":"Marsa Dubai","apt":[129,97,118,87,68,84,121,189,206,224,215,69],"land":[0,0,0,0,0,0,0,0,0,0,0,0]},{"id":"DUBAI MARITIME CITY","name":"Dubai Maritime City","kind":"apt","comm":321,"commName":"Madinat Dubai Al Melaheyah","apt":[3,1,0,0,0,0,0,3,41,135,222,62],"land":[1,0,0,0,0,0,0,1,3,2,2,1]},{"id":"DUBAI SCIENCE PARK","name":"Dubai Science Park","kind":"apt","comm":672,"commName":"Al Barsha South Second","apt":[1,1,4,1,9,11,6,9,44,139,260,49],"land":[0,0,0,0,0,0,0,0,0,0,0,0]},{"id":"DUBAI SOUTH RESIDENTIAL DISTRICT","name":"Dubai South Residential","kind":"apt","comm":521,"commName":"Madinat Al Mataar","apt":[4,12,62,23,23,13,15,23,20,51,87,103],"land":[0,1,0,0,0,0,2,1,3,4,6,1]},{"id":"DUBAI SPORTS CITY","name":"Dubai Sports City","kind":"apt","comm":682,"commName":"Al Hebiah Fourth","apt":[128,81,59,58,34,34,48,49,98,155,168,70],"land":[0,0,0,0,0,2,2,5,0,1,0,2]},{"id":"DUBAI STUDIO CITY","name":"Dubai Studio City","kind":"apt","comm":675,"commName":"Al Hebiah Second","apt":[24,9,0,2,1,8,8,5,35,37,72,47],"land":[1,1,0,1,0,0,0,0,0,0,0,0]},{"id":"DUBAI WORLD CENTRAL","name":"Dubai World Central","kind":"apt","comm":521,"commName":"Madinat Al Mataar","apt":[0,0,24,8,7,3,1,12,17,130,172,426],"land":[0,0,1,1,0,0,1,0,25,25,10,6]},{"id":"INTERNATIONAL CITY PHASE 1","name":"International City Phase 1","kind":"apt","comm":621,"commName":"Warsan First","apt":[91,84,68,93,43,27,68,97,88,105,87,51],"land":[0,1,0,1,0,1,0,0,0,1,0,0]},{"id":"INTERNATIONAL CITY PHASE 3","name":"International City Phase 3","kind":"apt","comm":624,"commName":"Warsan Fourth","apt":[1,0,4,6,11,3,7,7,20,38,81,55],"land":[1,1,3,0,0,0,2,2,2,5,7,0]},{"id":"INTERNATIONAL MEDIA PRODUCTION ZONE","name":"Intl. Media Production Zone","kind":"apt","comm":685,"commName":"Me'Aisem First","apt":[31,42,22,12,13,10,34,35,51,105,239,99],"land":[1,2,1,1,0,0,1,0,2,1,7,2]},{"id":"JUMEIRAH VILLAGE CIRCLE","name":"Jumeirah Village Circle (JVC)","kind":"apt","comm":681,"commName":"Al Barsha South Fourth","apt":[73,81,120,91,71,90,174,275,626,814,877,285],"land":[2,2,6,2,1,1,1,5,8,3,3,0]},{"id":"JUMEIRAH VILLAGE TRIANGLE","name":"Jumeirah Village Triangle (JVT)","kind":"apt","comm":684,"commName":"Al Barsha South Fifth","apt":[12,21,48,17,10,14,8,35,53,156,268,94],"land":[3,1,0,0,0,0,2,0,1,2,5,0]},{"id":"JUMERIAH BEACH RESIDENCE  - JBR","name":"JBR","kind":"apt","comm":392,"commName":"Marsa Dubai","apt":[26,22,22,20,11,31,40,33,34,32,28,7],"land":[0,0,0,0,0,0,0,0,0,0,0,0]},{"id":"LIWAN1","name":"Liwan 1","kind":"apt","comm":643,"commName":"Wadi Al Safa 2","apt":[60,41,28,16,31,18,8,6,10,48,71,24],"land":[0,1,0,0,0,0,0,0,0,0,2,1]},{"id":"MAJAN","name":"Majan","kind":"apt","comm":645,"commName":"Wadi Al Safa 3","apt":[0,3,5,3,0,4,1,10,13,116,214,168],"land":[1,2,1,0,0,2,0,1,3,2,4,0]},{"id":"MEYDAN ONE COMMUNITY","name":"Meydan One","kind":"apt","comm":347,"commName":"Al Merkadh","apt":[0,0,13,63,48,10,17,62,135,210,81,33],"land":[0,0,0,0,0,0,0,0,1,0,1,0]},{"id":"MEYDAN RACECOURSE COMMUNITY","name":"Meydan Racecourse","kind":"apt","comm":618,"commName":"Nadd Al Shiba First","apt":[8,2,15,10,6,8,7,11,18,26,25,78],"land":[1,3,1,0,1,0,1,1,1,0,0,0]},{"id":"MINA RASHID","name":"Mina Rashid","kind":"apt","comm":321,"commName":"Madinat Dubai Al Melaheyah","apt":[0,0,0,0,0,0,0,11,65,109,59,13],"land":[0,0,0,0,0,0,0,0,0,0,0,0]},{"id":"MOTOR CITY","name":"Motor City","kind":"apt","comm":674,"commName":"Al Hebiah First","apt":[3,18,9,3,10,8,16,13,32,111,268,91],"land":[1,0,0,0,0,0,1,1,0,1,0,0]},{"id":"PALM DEIRA","name":"Palm Deira","kind":"apt","comm":101,"commName":"Nakhlat Deira","apt":[0,0,0,0,0,0,0,0,7,50,208,161],"land":[2,0,0,1,0,0,2,1,6,41,11,1]},{"id":"PALM JUMEIRAH","name":"Palm Jumeirah","kind":"apt","comm":381,"commName":"Nakhlat Jumeira","apt":[55,26,23,25,32,28,56,119,84,83,69,25],"land":[6,3,0,1,2,0,3,12,11,10,6,2]},{"id":"REMRAAM","name":"Remraam","kind":"apt","comm":683,"commName":"Al Hebiah Fifth","apt":[20,21,13,10,13,8,14,23,18,36,24,9],"land":[0,0,0,0,0,0,0,0,0,0,0,0]},{"id":"SILICON OASIS","name":"Silicon Oasis","kind":"apt","comm":626,"commName":"Nadd Hessa","apt":[66,100,48,56,28,23,28,50,82,89,171,41],"land":[0,0,0,0,0,0,0,1,1,1,0,1]},{"id":"SOBHA HARTLAND","name":"Sobha Hartland","kind":"apt","comm":347,"commName":"Al Merkadh","apt":[0,1,14,18,12,45,66,135,238,72,67,44],"land":[0,0,0,0,0,0,1,2,9,6,1,0]},{"id":"THE GREENS","name":"The Greens","kind":"apt","comm":388,"commName":"Al Thanyah Third","apt":[43,23,19,19,11,8,20,30,28,34,25,13],"land":[0,0,0,0,0,0,0,0,0,0,0,0]},{"id":"TOWN SQUARE","name":"Town Square","kind":"apt","comm":922,"commName":"Al Yalayis 2","apt":[41,37,31,6,12,41,31,8,118,148,103,62],"land":[0,0,0,0,0,0,0,0,0,0,0,0]},{"id":"WASL GATE","name":"Wasl Gate","kind":"apt","comm":591,"commName":"Jabal Ali First","apt":[0,0,0,0,7,3,0,10,9,45,66,79],"land":[0,0,0,0,0,0,0,0,3,2,1,0]},{"id":"DAMAC HILLS 2","name":"Damac Hills 2","kind":"land","comm":916,"commName":"Al Yufrah 2","apt":[0,9,0,2,8,3,1,6,6,80,18,3],"land":[43,72,82,19,9,5,18,35,70,200,148,29]},{"id":"DAMAC LAGOONS","name":"Damac Lagoons","kind":"land","comm":683,"commName":"Al Hebiah Fifth","apt":[0,0,0,0,0,0,0,0,0,27,30,73],"land":[0,0,0,0,0,0,0,202,72,52,29,15]},{"id":"JABAL ALI VILLAGE","name":"Jebel Ali Village","kind":"land","comm":591,"commName":"Jabal Ali First","apt":[0,0,0,0,0,0,0,0,0,0,0,0],"land":[0,0,0,0,0,0,0,48,12,8,3,11]},{"id":"JABEL ALI HILLS","name":"Jebel Ali Hills","kind":"land","comm":513,"commName":"Saih Shuaib 1","apt":[0,0,0,0,0,0,0,0,0,0,0,0],"land":[0,119,3,2,0,0,3,5,19,16,26,5]},{"id":"JUMEIRAH GOLF ESTATES","name":"Jumeirah Golf Estates","kind":"land","comm":685,"commName":"Me'Aisem First","apt":[0,7,8,0,5,0,6,7,7,8,4,4],"land":[4,2,3,0,1,2,8,7,18,9,6,2]},{"id":"MUDON","name":"Mudon","kind":"land","comm":677,"commName":"Al Hebiah Sixth","apt":[0,0,4,0,1,4,4,0,1,1,1,1],"land":[40,10,4,10,3,4,3,2,1,3,1,0]},{"id":"NAD AL SHEBA GARDENS","name":"Nad Al Sheba Gardens","kind":"land","comm":618,"commName":"Nadd Al Shiba First","apt":[0,0,0,0,0,0,0,0,0,2,6,1],"land":[0,0,0,11,4,3,9,14,11,14,8,2]},{"id":"NAD AL SHIBA VILLAS","name":"Nad Al Shiba Villas","kind":"land","comm":616,"commName":"Nadd Al Shiba Third","apt":[0,0,0,0,0,0,0,0,0,0,0,0],"land":[0,0,0,0,0,19,38,5,1,2,1,1]},{"id":"PALM JABAL ALI","name":"Palm Jebel Ali","kind":"land","comm":501,"commName":"Nakhlat Jabal Ali","apt":[0,0,0,0,0,0,0,0,0,0,3,14],"land":[0,0,0,0,0,0,0,0,34,9,37,11]},{"id":"THE VALLEY","name":"The Valley","kind":"land","comm":915,"commName":"Al Yufrah 1","apt":[0,0,0,0,0,0,0,0,0,0,0,0],"land":[0,0,0,0,0,0,0,0,9,14,31,2]},{"id":"TILAL AL GHAF","name":"Tilal Al Ghaf","kind":"land","comm":682,"commName":"Al Hebiah Fourth","apt":[0,0,0,0,0,0,0,0,0,0,0,0],"land":[0,0,0,0,0,0,36,22,21,15,13,8]}]};
 
-// Number formats: 1,234  |  12.3%  |  12%
+// number formats: 1,234 | 12.3% | 12%
 const formatCount = d3.format(","),
   formatPercentOneDecimal = d3.format(".1%"),
   formatPercentWhole = d3.format(".0%");
-// years = the list of years, yearCount = how many (12), lastFullYearIndex = index of 2025, the last full year (2026 stops at 31 Aug).
+// the list of years and how many there are (12)
 const years = DATA.years,
   yearCount = years.length,
-  lastFullYearIndex = yearCount - 2; // 2026 is a part year (to 31 Aug)
-// ============================================================
-// A2  TOOLTIP: a small box that follows the mouse
-// ============================================================
+  lastFullYearIndex = yearCount - 2; // index of 2025, the last full year (2026 stops at 31 Aug)
+// ---------- tooltip ----------
+// small box that follows the mouse
 const tooltip = d3.select("#tip");
 function showTip(event, html, anchor) {
   tooltip.style("display", "block").html(html);
   const tooltipWidth = tooltip.node().offsetWidth,
     tooltipHeight = tooltip.node().offsetHeight;
   if (anchor) {
-    // anchor = the bounding box of a chart column: put the tip beside it, its bottom on the axis,
-    // so it never covers the year labels under the bars.
+    // anchor = the box of a chart column. the tip goes beside it with its bottom on the axis,
+    // so it does not cover the year labels under the bars
     const right = anchor.right + 10 + tooltipWidth <= innerWidth - 8;
     tooltip
       .style("left", Math.max(8, right ? anchor.right + 10 : anchor.left - 10 - tooltipWidth) + "px")
@@ -546,52 +524,48 @@ function showTip(event, html, anchor) {
     .style("top", Math.min(innerHeight - tooltipHeight - 8, event.clientY + 14) + "px");
 }
 const hideTip = () => tooltip.style("display", "none");
-// Makes a text safe to place inside HTML (so names cannot break the page).
+// escapes text so project names can't break the html
 const escapeHtml = (text) =>
   String(text).replace(
     /[&<>"]/g,
     (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[character],
   );
 
-// ============================================================
-// A3  CALCULATIONS: counts -> shares, peak years, order
-// ============================================================
-// For every project row we compute:
-//   aptShares  = its flat sales in a year / ALL flat sales that year   (its "share", drawn as the cell colour)
-//   landShares  = its land plots in a year / ALL land plots that year
-//   peakYear  = its peak year (the year with the biggest share, 2015 to 2025 only)
-//   aptTotal, landTotal = its total flats / plots over all years
+// ---------- calculations ----------
+// for every project:
+//   aptShares  = its flat sales in a year / all flat sales that year (this is the cell colour)
+//   landShares = its land plots in a year / all land plots that year
+//   peakYear   = year with its biggest share (2015 to 2025 only)
+//   aptTotal, landTotal = its total flats / land plots over all years
 const totalAptByYear = DATA.totApt,
   totalLandByYear = DATA.totLand;
 const projects = DATA.rows.map((project) => {
   const aptShares = project.apt.map((count, yearIndex) => count / totalAptByYear[yearIndex]),
     landShares = project.land.map((count, yearIndex) => count / totalLandByYear[yearIndex]);
   const sharesForRanking = project.kind === "apt" ? aptShares : landShares;
-// Peak year = index of the largest share over 2015-2025 (yearCount - 1 leaves out the part year 2026).
-//   // A tie keeps the earlier year, because the new value must be strictly bigger to win.
+  // peak year = index of the biggest share over 2015-2025 (yearCount - 1 leaves out 2026)
+  // if two years tie the earlier one wins, because the new value has to be strictly bigger
   const peakYearIndex = d3.range(yearCount - 1).reduce((bestIndex, yearIndex) => (sharesForRanking[yearIndex] > sharesForRanking[bestIndex] ? yearIndex : bestIndex), 0);
   return { ...project, aptShares, landShares, peakYear: years[peakYearIndex], peakYearIndex, aptTotal: d3.sum(project.apt), landTotal: d3.sum(project.land) };
 });
-// Split the rows by kind, and keep the biggest share of each kind (used to scale the colours).
+// split the rows by kind and keep the biggest share of each kind (used to scale the colours)
 const allAptProjects = projects.filter((project) => project.kind === "apt"),
   landProjects = projects.filter((project) => project.kind === "land");
-// Land plots per year summed over the land-led places (the orange part of the land bars).
+// land plots per year added up over the land-led places (the orange part of the land bars)
 const landLedPlotsByYear = years.map((year, yearIndex) => d3.sum(landProjects, (project) => project.land[yearIndex]));
 const maxAptShare = d3.max(allAptProjects, (project) => d3.max(project.aptShares)),
   maxLandShare = d3.max(landProjects, (project) => d3.max(project.landShares));
-// ============================================================
-// A4  WAVE TEST: is the wave real, or just an effect of sorting?
-// ============================================================
-// Sorting any table by peak year makes a staircase. So we test it:
-//   realCorrelation     = how closely a project's share in one year matches its share the next year (real data)
-//   shuffledCorrelation = the same number after randomly shuffling each project's years, 2000 times
-// If realCorrelation is clearly bigger than shuffledCorrelation, the pattern is more than the sort. The code below does exactly that.
-// It runs live in the browser with a fixed seed, so every page load gives the same numbers.
+// ---------- shuffle test ----------
+// sorting any table by peak year makes a staircase, so I check that it is not just the sorting:
+//   realCorrelation     = how close a project's share in one year is to its share the next year (real data)
+//   shuffledCorrelation = the same number after shuffling each project's years randomly, 2000 times
+// if the real one is clearly bigger, the pattern is more than the sort
+// it uses a fixed seed, so every page load gives the same numbers
 const waveTest = (() => {
-// fullYearCount = the 11 full years (2015-2025). sharesByProject = each apartment project's yearly shares over those years.
+  // fullYearCount = the 11 full years (2015-2025), sharesByProject = each apartment project's shares over those years
   const fullYearCount = yearCount - 1,
     sharesByProject = allAptProjects.map((project) => project.aptShares.slice(0, fullYearCount));
-  // lag1Correlation: correlation between each year and the next year of one project (1 = identical pattern, 0 = no link).
+  // lag1Correlation: correlation between each year and the next year for one project (1 = same pattern, 0 = no link)
   const lag1Correlation = (yearlyShares) => {
     const thisYear = yearlyShares.slice(0, -1),
       nextYear = yearlyShares.slice(1),
@@ -602,7 +576,7 @@ const waveTest = (() => {
     return denominator > 0 ? numerator / denominator : NaN;
   };
   const averageLag1Correlation = (shareSeriesList) => d3.mean(shareSeriesList.map(lag1Correlation).filter((correlation) => !isNaN(correlation)));
-  // A small seeded random generator, so the shuffles (and the result) are the same every time the page opens.
+  // small seeded random generator, so the shuffles are the same every time
   let seed = 12345;
   const seededRandom = () => {
     seed |= 0;
@@ -611,7 +585,7 @@ const waveTest = (() => {
     mixed = (mixed + Math.imul(mixed ^ (mixed >>> 7), 61 | mixed)) ^ mixed;
     return ((mixed ^ (mixed >>> 14)) >>> 0) / 4294967296;
   };
-  // shuffleYears: shuffles one project's years into a random order (Fisher-Yates shuffle).
+  // shuffles one project's years into a random order (Fisher-Yates)
   const shuffleYears = (yearlyShares) => {
     const shuffledYears = yearlyShares.slice();
     for (let index = shuffledYears.length - 1; index > 0; index--) {
@@ -620,32 +594,30 @@ const waveTest = (() => {
     }
     return shuffledYears;
   };
-  // Real values first, then 2000 shuffled versions; p counts how often a shuffle did at least as well as the real data.
+  // real value first, then 2000 shuffled versions
   const realCorrelation = averageLag1Correlation(sharesByProject),
     shuffleCount = 2000;
   let shufflesAtLeastAsGood = 0,
     shuffledTotal = 0;
-  // Each round: shuffle every project's years, measure again, add to the running total,
-  // and count the rounds that matched or beat the real value.
+  // each round: shuffle every project's years, measure again, add to the total,
+  // and count the rounds that did at least as well as the real value
   for (let round = 0; round < shuffleCount; round++) {
     const shuffledShares = sharesByProject.map(shuffleYears),
       shuffledCorrelation = averageLag1Correlation(shuffledShares);
     shuffledTotal += shuffledCorrelation;
     if (shuffledCorrelation >= realCorrelation) shufflesAtLeastAsGood++;
   }
-  // pValue = (shufflesAtLeastAsGood + 1) / (shuffleCount + 1): the real data counts as one possible ordering, so it is never exactly 0.
-  // shuffledCorrelation = the average over all shuffled rounds.
+  // pValue = (shufflesAtLeastAsGood + 1) / (shuffleCount + 1), so it is never exactly 0
+  // shuffledCorrelation = average over all the shuffled rounds
   return { realCorrelation, shuffledCorrelation: shuffledTotal / shuffleCount, pValue: (shufflesAtLeastAsGood + 1) / (shuffleCount + 1), shuffleCount, projectCount: sharesByProject.length };
 })();
 const periodIndexOfYear = (year) => Math.floor((year - years[0]) / 3); // 2015-17, 2018-20, 2021-23, 2024-26
 const yearsInPeriod = (periodIndex) => [years[0] + 3 * periodIndex, years[0] + 3 * periodIndex + 2];
 
-// ============================================================
-// A5  HEADLINE NUMBERS
-// All computed from the data, nothing typed in by hand.
-// ============================================================
-// Land-led places = the 11 projects with many land plots. We compare their share of land sales
-// with their share of apartment sales in 2022-25: each share uses its own total.
+// ---------- headline numbers ----------
+// all computed from the data
+// land-led places = the 11 projects with many land plots; I compare their share of land sales
+// with their share of flat sales in 2022-25 (each share uses its own total)
 const sumRange = (values, firstIndex, lastIndex) => d3.sum(values.slice(firstIndex, lastIndex + 1));
 const index2022 = years.indexOf(2022),
   index2025 = years.indexOf(2025);
@@ -655,27 +627,24 @@ const flatsSoldInLandLedPlaces2022to2025 = d3.sum(landProjects, (project) => sum
   allFlatsSold2022to2025 = sumRange(totalAptByYear, index2022, index2025);
 const landShareInLandLedPlaces = landLedPlotsIn2022to2025 / allLandPlotsIn2022to2025,
   flatShareInLandLedPlaces = flatsSoldInLandLedPlaces2022to2025 / allFlatsSold2022to2025;
-// biggest(y): the three projects with the most flat sales among those whose peak year is y.
+// topProjectsPeakingIn(year): the three projects with the most flat sales among those whose peak year is that year
 const topProjectsPeakingIn = (year) =>
   allAptProjects
     .filter((project) => project.peakYear === year)
     .sort((first, second) => second.aptTotal - first.aptTotal)
     .slice(0, 3)
     .map((project) => project.name);
-// One short sentence under the page title (the numbers are in the three discoveries below).
+// short sentence under the page title (the numbers are in the three cards below)
 d3.select("#head").text(
   "Apartment buying peaked in different projects at different times, and land-plot sales grew sharply.",
 );
 
-// ============================================================
-// B   THE THREE DISCOVERIES (top of the page)
-// ============================================================
-// Each story is a question, a one-sentence answer and a small chart. Clicking a card jumps to its chart.
-// The charts are tiny D3 SVGs drawn from numbers computed above. A click calls window.__nav,
-// which build() defines later: it scrolls to the right part of the heatmap and flashes it.
+// ---------- the three discovery cards ----------
+// each card = a question, a one sentence answer and a small D3 chart made from the numbers above
+// clicking a card calls window.__nav, which build() defines later: it scrolls to that part of the heatmap
 (function () {
   const root = d3.select("#glance").html("");
-// Palette: orange = land, blue = apartments, greys for text.
+  // colours: orange = land, blue = apartments, greys for text
   const ORANGE = "#E0701E",
     BLUE = "#3C7AB8",
     GREY = "#8CA1C6",
@@ -683,7 +652,7 @@ d3.select("#head").text(
     TEXT_MUTED = "#52627C",
     ORANGE_LIGHT = "#F9DDC2",
     BLUE_LIGHT = "#D3E3F4";
-// addText: adds one SVG text (position, size, weight, colour, alignment, optional white halo for readability).
+  // addText: adds one svg text (position, size, weight, colour, alignment, optional white outline so it stays readable)
   const addText = (group, xPosition, yPosition, label, options = {}) => {
     const textElement = group
       .append("text")
@@ -697,7 +666,7 @@ d3.select("#head").text(
     if (options.halo) textElement.attr("stroke", "#F6F9FC").attr("stroke-width", 4).attr("paint-order", "stroke");
     return textElement;
   };
-  // fit: draws a chart at the width of its box, and redraws it if the window is resized.
+  // drawAtBoxWidth: draws a chart at the width of its box and redraws it if the window is resized
   const drawAtBoxWidth = (stage, render) => {
     let currentWidth = 0;
     const redrawIfWidthChanged = () => {
@@ -712,14 +681,14 @@ d3.select("#head").text(
     if (window.ResizeObserver) new ResizeObserver(() => requestAnimationFrame(redrawIfWidthChanged)).observe(stage.node());
     else addEventListener("resize", redrawIfWidthChanged);
   };
-// addSvg: adds an empty responsive SVG (viewBox w x h) to a card.
+  // addSvg: adds an empty responsive svg (viewBox width x height) to a card
   const addSvg = (container, width, height) =>
     container
       .append("svg")
       .attr("viewBox", `0 0 ${width} ${height}`)
       .attr("class", "dsvgx")
       .attr("aria-hidden", "true");
-// jumpToChart(key): runs the jump registered by build() in window.__nav ("bars", "land" or "apt").
+  // jumpToChart(key): runs the jump that build() put in window.__nav ("bars", "land" or "apt")
   const jumpToChart = (chartKey) => {
     const navigation = window.__nav;
     if (navigation && navigation[chartKey]) navigation[chartKey]();
@@ -729,11 +698,11 @@ d3.select("#head").text(
       .append("article")
       .attr("class", "story " + cssClass + (isWide ? " wide" : ""))
       .attr("data-go", chartKey)
-      // Clicking anywhere on the card jumps to its chart (but not while the person is selecting text).
+      // clicking anywhere on the card jumps to its chart (but not while the person is selecting text)
       .on("click", () => {
         if (String(getSelection()).length === 0) jumpToChart(chartKey);
       });
-    // Same order in every card: question, one-sentence answer, chart.
+    // same order in every card: question, answer, chart
     card.append("h3").attr("class", "q").text(question);
     card.append("p").attr("class", "ans").text(answer);
     const stage = card.append("div").attr("class", "stage");
@@ -750,7 +719,7 @@ d3.select("#head").text(
     return stage;
   };
 
-  // 1. land sales: two years, one scale; 2025 is cut into blocks the size of 2015's total
+  // card 1: land sales, two years on one scale; 2025 is cut into blocks the size of 2015's total
   {
     const stage = addDiscoveryCard(
       "land",
@@ -794,7 +763,7 @@ d3.select("#head").text(
     });
   }
 
-  // 2. same 11 projects, two different markets, each bar = 100% of its own total
+  // card 2: the same 11 projects in two markets, each bar = 100% of its own total
   {
     const stage = addDiscoveryCard(
       "both",
@@ -850,7 +819,7 @@ d3.select("#head").text(
     });
   }
 
-  // 3. real pattern or sorting artefact: two plain comparisons, real vs shuffled
+  // card 3: real pattern or just the sorting? real vs shuffled
   {
     const stage = addDiscoveryCard(
       "apt",
@@ -941,55 +910,52 @@ d3.select("#head").text(
   }
 })();
 
-// ============================================================
-// C1  STATE: everything the user can change lives in this one object
-// ============================================================
+// ---------- state ----------
+// everything the user can change is in this one object
 //   sortByPeak             = false: A-Z, true: by peak year
 //   selectedProject        = the selected project (or null)
 //   communityFromOtherView = a community chosen in another view (or null)
 //   selectedYear           = the selected year (or null)
 //   onlyTopTwenty          = false: all 41 projects, true: top 20
-// Clicking changes state, then render() redraws what depends on it.
+// a click changes the state, then render() redraws what depends on it
 const state = { sortByPeak: false, selectedProject: null, communityFromOtherView: null, selectedYear: null, onlyTopTwenty: false };
-// Layers that render() and applyOrder() need to reach later: the row groups (rowGroups) and the peak-line layer (peakLineLayer).
+// layers that render() and applyOrder() need later: the row groups and the peak line layer
 let rowGroups, peakLineLayer;
-// TOPN = how many apartment projects "Top 20" shows.
+// TOPN = how many apartment projects "Top 20" shows
 const TOPN = 20;
-// ============================================================
-// C2  build(): draws the heatmap and everything linked to it
-// Sections inside build(), in order: layout, colour, static layers, rows,
-// sorting, land bars, the jump from a card, legend, selection, evidence table.
-// ============================================================
+// ---------- build(): draws the heatmap and everything linked to it ----------
+// parts inside, in order: layout, colour, static layers, rows, sorting, land bars,
+// jump from a card, legend, selection, evidence table
 function build() {
-  // Which apartment projects to show: all 41, or the 20 with the most flat sales.
+  // which apartment projects to show: all 41, or the 20 with the most flat sales
   const shownAptProjects = state.onlyTopTwenty ? [...allAptProjects].sort((first, second) => second.aptTotal - first.aptTotal).slice(0, TOPN) : allAptProjects;
-// rowsV = all rows drawn in this view (the apartment projects, then the 11 land-led places).
+  // shownProjects = all rows drawn right now (the apartment projects, then the 11 land-led places)
   const shownProjects = [...shownAptProjects, ...landProjects];
   if (state.selectedProject && !shownProjects.some((project) => project.id === state.selectedProject.id)) {
     state.selectedProject = null;
     emit();
   }
-// biggestV(y): like biggest(), but only among the rows currently shown (All or Top 20).
+  // topShownProjectsPeakingIn(year): same as topProjectsPeakingIn but only among the rows shown (All or Top 20)
   const topShownProjectsPeakingIn = (year) =>
     shownAptProjects
       .filter((project) => project.peakYear === year)
       .sort((first, second) => second.aptTotal - first.aptTotal)
       .slice(0, 3)
       .map((project) => project.name);
-  // Clear the old drawing before redrawing (needed when switching between All and Top 20).
+  // clear the old drawing before redrawing (needed when switching between All and Top 20)
   d3.select("#hm").selectAll("*").remove();
   d3.select("#tableWrap").selectAll("*").remove();
   d3.select("#leg").html("");
-  // ----- C2: layout --------------------------------------------
-  // Sizes are in SVG units (the SVG scales to the screen).
-  // canvasWidth = width, margin = margins (left: room for project names, right: room for "peak 2023" labels),
-  // columnWidth = width of one year column, rowHeight = height of one project row.
+  // ----- layout -----
+  // sizes are in svg units (the svg scales to the screen)
+  // canvasWidth = width, margin = margins (left: project names, right: "peak 2023" labels),
+  // columnWidth = one year column, rowHeight = one project row
   const canvasWidth = 900,
     margin = { left: 232, right: 120, top: 58, bottom: 6 };
   const columnWidth = (canvasWidth - margin.left - margin.right) / yearCount,
     rowHeight = 15,
     gapBetweenBlocks = 52;
-// x(i): left edge of year column i. The row/bar positions below are all computed from these sizes.
+  // yearColumnLeft(yearIndex): left edge of a year column; all the row and bar positions use these sizes
   const yearColumnLeft = (yearIndex) => margin.left + yearIndex * columnWidth;
   const aptTop = margin.top,
     landTop = aptTop + shownAptProjects.length * rowHeight + gapBetweenBlocks;
@@ -1001,9 +967,9 @@ function build() {
   const heatmapSvg = d3.select("#hm").attr("viewBox", `0 0 ${canvasWidth} ${canvasHeight}`);
 
 
-  // ----- C2: colour --------------------------------------------
-  // Share -> colour. A square-root scale keeps small shares visible next to the biggest ones;
-  // the ramp runs from light to dark, so a darker cell always means a bigger share.
+  // ----- colour -----
+  // share -> colour. a square-root scale keeps small shares visible next to big ones,
+  // light to dark, so a darker cell always means a bigger share
   const shareToUnit = d3.scaleSqrt().domain([0, maxAptShare]).range([0, 1]);
   const aptRamp = d3.piecewise(d3.interpolateRgb, [
     "#CCE0F2",
@@ -1014,7 +980,7 @@ function build() {
     "#0A2D57",
   ]);
   const aptColor = (share) => aptRamp(shareToUnit(share));
-  // Land uses its own one-hue orange scale, so blue always means apartments and orange land.
+  // land has its own orange scale, so blue always means apartments and orange land
   const landRamp = d3.piecewise(d3.interpolateRgb, [
     "#FBDDBF",
     "#F7B882",
@@ -1024,15 +990,15 @@ function build() {
     "#5E2406",
   ]);
   const landColor = (share) => landRamp(Math.sqrt(Math.min(1, share / maxLandShare)));
-// labelInk: white text on dark cells, dark text on light cells.
+  // labelInk: white text on dark cells, dark text on light cells
   const labelInk = (share) => (shareToUnit(share) > 0.5 ? "#FFFFFF" : "#16233B");
 
 
-  // ----- C2: static layers -------------------------------------
-  // Layers are stacked in this order (first = bottom): period band, year labels, rows, peak line, land bars.
+  // ----- static layers -----
+  // stacked in this order (first = bottom): period band, year labels, rows, peak line, land bars
   const periodBands = heatmapSvg.append("g"); // period band, drawn behind
   const yearHeadings = heatmapSvg.append("g");
-// Year headings: click one (or press Enter) to select that year; the last one is marked "*" (part year).
+  // year headings: click one (or press Enter) to select that year; the last one has a * (part year)
   yearHeadings
     .selectAll("text")
     .data(years)
@@ -1076,15 +1042,15 @@ function build() {
     .attr("x", 8)
     .attr("y", barTop - 24)
     .text("Land plots sold per year");
-// Empty layers, created now so they stack in the right order; they are filled further down.
+  // empty layers created now so they stack in the right order, they are filled further down
   const rowsLayer = heatmapSvg.append("g");
   peakLineLayer = heatmapSvg.append("g").style("pointer-events", "none");
   const barLayer = heatmapSvg.append("g");
   const axisBar = heatmapSvg.append("g");
 
-  // ----- C2: rows ----------------------------------------------
-  // One row per project, with one rectangle (cell) per year.
-  // order() decides each row's vertical position: A-Z by name, or by peak year.
+  // ----- rows -----
+  // one row per project, with one rectangle (cell) per year
+  // order() works out each row's vertical position: A-Z by name, or by peak year
   function order() {
     const compareRows = state.sortByPeak
       ? (first, second) =>
@@ -1098,10 +1064,10 @@ function build() {
     landInOrder.forEach((project, position) => rowY.set(project.id, landTop + position * rowHeight));
     return { aptInOrder, landInOrder, rowY };
   }
-// rowOrder = the current vertical position of every row; recomputed whenever the sort changes.
+  // rowOrder = the current vertical position of every row, recomputed when the sort changes
   let rowOrder = order();
-// The data join: one <g class="row"> per project, matched by id.
-//   // join(enter) runs once per new row: it creates the label, a highlight rectangle, 12 year cells and a "peak" label.
+  // data join: one <g class="row"> per project, matched by id
+  // the enter part runs once per new row: it creates the label, a highlight rectangle, 12 year cells and a "peak" label
   rowGroups = rowsLayer
     .selectAll("g.row")
     .data(shownProjects, (project) => project.id)
@@ -1112,7 +1078,7 @@ function build() {
         .attr("tabindex", 0)
         .attr("role", "button")
         .style("cursor", "pointer")
-// Click or press Enter/Space on a row to select it.
+        // click or press Enter/Space on a row to select it
         .on("click", (event, project) => selectRow(project))
         .on("keydown", (event, project) => {
           if (event.key === "Enter" || event.key === " ") {
@@ -1126,7 +1092,7 @@ function build() {
         .attr("y", rowHeight / 2 + 4)
         .attr("text-anchor", "end")
         .text((project) => project.name);
-// Inside each row: the highlight rectangle, then one cell per year (a second, nested join).
+      // inside each row: the highlight rectangle, then one cell per year (a nested join)
       rowGroup.each(function (project) {
         const projectRow = d3.select(this);
         projectRow.insert("rect", ":first-child")
@@ -1147,7 +1113,7 @@ function build() {
           .attr("width", columnWidth - 1.5)
           .attr("height", rowHeight - 1.5)
           .attr("rx", 1.5)
-// Hovering a cell shows its tooltip; the cell colour itself is set later by paintCells().
+          // hovering a cell shows its tooltip (the colour is set later by paintCells)
           .on("pointermove", (event, cell) => showTip(event, cellTip(cell.r, cell.yearIndex)))
           .on("pointerleave", hideTip);
         projectRow.append("text")
@@ -1158,17 +1124,17 @@ function build() {
       });
       return rowGroup;
     });
-// Move every row to its vertical position (translate in y).
+  // move every row to its vertical position
   rowGroups.attr("transform", (project) => `translate(0,${rowOrder.rowY.get(project.id)})`);
 
-  // Text shown in the tooltip when hovering a cell.
+  // text for the cell tooltip
   function cellTip(project, yearIndex) {
     const year = years[yearIndex];
     if (project.kind === "apt")
       return `<b>${formatPercentOneDecimal(project.aptShares[yearIndex])}</b> of ${year} apartment sales<div>${escapeHtml(project.name)}</div><div class="s">${formatCount(project.apt[yearIndex])} of ${formatCount(totalAptByYear[yearIndex])} flat sales that year · ${escapeHtml(project.commName)}</div>`;
     return `<b>${formatCount(project.land[yearIndex])} land plots</b> in ${year}<div>${escapeHtml(project.name)}</div><div class="s">${formatPercentOneDecimal(project.landShares[yearIndex])} of the year's ${formatCount(totalLandByYear[yearIndex])} plots · ${formatCount(project.apt[yearIndex])} flat sales · ${escapeHtml(project.commName)}</div>`;
   }
-  // Colours each cell: blue ramp for apartments, orange ramp for land, light grey when there were no sales.
+  // colours each cell: blue for apartments, orange for land, light grey when there were no sales
   function paintCells() {
     rowGroups
       .selectAll("rect.c")
@@ -1186,12 +1152,12 @@ function build() {
   }
   paintCells();
 
-  // ----- C2: sorting -------------------------------------------
-  // applyOrder: moves the rows to their new positions (animated), updates the A-Z / peak buttons,
-  // then draws the peak line once the movement has finished (hence the 1700 ms delay).
+  // ----- sorting -----
+  // applyOrder: moves the rows to their new positions (animated) and updates the A-Z / peak buttons,
+  // then draws the peak line once the movement has finished (hence the 1700 ms delay)
   function applyOrder(animate) {
     rowOrder = order();
-// With animation: a transition where each row starts slightly later than the one above, so the rows slide like a wave.
+    // animated version: each row starts a bit later than the one above, so the rows slide like a wave
     const movement = animate
       ? rowGroups
           .transition()
@@ -1210,7 +1176,7 @@ function build() {
       .attr("opacity", (project) => (project.kind === "land" ? 1 : 0));
     setTimeout(drawPeaks, animate ? 1700 : 0);
   }
-  // drawPeaks: after peak-year sorting, draws a line through each project's peak cell and writes "peak 2023" labels.
+  // drawPeaks: after sorting by peak year, draws a line through each project's peak cell and writes the "peak 2023" labels
   function drawPeaks() {
     peakLineLayer.selectAll("*").remove();
     rowGroups
@@ -1220,7 +1186,7 @@ function build() {
       )
       .attr("opacity", (project) => (project.kind === "land" || state.sortByPeak ? 1 : 0));
     if (!state.sortByPeak) return;
-// The wave line: one point per project (its peak cell), joined with a smooth curve, drawn left to right.
+    // wave line: one point per project (its peak cell), joined with a smooth curve, drawn left to right
     const peakPoints = rowOrder.aptInOrder.map((project) => [yearColumnLeft(project.peakYearIndex) + columnWidth / 2, rowOrder.rowY.get(project.id) + rowHeight / 2]);
     const peakLinePath = d3.line().curve(d3.curveMonotoneY)(peakPoints);
     const haloPath = peakLineLayer
@@ -1238,7 +1204,7 @@ function build() {
       .attr("stroke", "#16233B")
       .attr("stroke-width", 1.6)
       .attr("stroke-linecap", "round");
-// Draw-on animation: the dash pattern equals the line length, and the offset shrinks from L to 0.
+    // draw-on animation: dash length = line length, then the offset goes from the length down to 0
     const pathLength = mainPath.node().getTotalLength();
     [haloPath, mainPath].forEach((path) =>
       path
@@ -1249,7 +1215,7 @@ function build() {
         .ease(d3.easeCubicInOut)
         .attr("stroke-dashoffset", 0),
     );
-// A dot on each peak cell, and its share written beside it (both fade in after the line).
+    // a dot on each peak cell and its share beside it (they fade in after the line)
     peakLineLayer
       .selectAll("circle")
       .data(rowOrder.aptInOrder)
@@ -1280,7 +1246,7 @@ function build() {
       .delay(1300)
       .duration(400)
       .attr("opacity", 1);
-    // caption – generated from the data
+    // caption generated from the data
     const peakSequence = [...new Set(rowOrder.aptInOrder.map((project) => project.peakYear))]
       .map((year) => `<b>${year}</b> ${topShownProjectsPeakingIn(year)[0]}`)
       .join(" → ");
@@ -1288,7 +1254,7 @@ function build() {
       `<span class="s">Biggest project peaking each year:</span> ${peakSequence}`,
     );
   }
-  // The A-Z and "By peak year" buttons switch state.sortByPeak and re-run the animation.
+  // the A-Z and "By peak year" buttons change state.sortByPeak and run the animation again
   const toggleSort = () => {
     state.sortByPeak = !state.sortByPeak;
     if (!state.sortByPeak) d3.select("#cap").html("");
@@ -1301,11 +1267,11 @@ function build() {
     if (!state.sortByPeak) toggleSort();
   });
 
-  // ----- C2: land-plot bars ------------------------------------
-  // Land plots per year, drawn under the heatmap with the same year columns.
-  // Each bar is split into: land-led places (orange) / other named projects / no project name.
+  // ----- land plot bars -----
+  // land plots per year under the heatmap, using the same year columns
+  // each bar has three parts: land-led places (orange), other named projects, no project name
   const namedPlotsByYear = years.map((year, yearIndex) => totalLandByYear[yearIndex] - DATA.landNoProj[yearIndex]);
-// stackData: for each year, the three parts of the land bar and the total.
+  // yearRecords: for each year, the three parts of the bar and the total
   const yearRecords = years.map((year, yearIndex) => ({
     year,
     yearIndex,
@@ -1314,7 +1280,7 @@ function build() {
     none: DATA.landNoProj[yearIndex],
     total: totalLandByYear[yearIndex],
   }));
-// by: the y scale of the bars (value -> pixel). It is a linear scale; .nice() rounds the top to a clean number.
+  // plotsToY: the y scale of the bars (value -> pixel). it is linear and .nice() rounds the top to a clean number
   const plotsToY = d3
     .scaleLinear()
     .domain([0, d3.max(totalLandByYear) * 1.08])
@@ -1335,7 +1301,7 @@ function build() {
         axis.selectAll("line").attr("stroke", "var(--grid)");
       });
   });
-// The three stacked segments, bottom to top. Each is one rectangle per year, placed on top of the ones below.
+  // the three stacked segments, bottom to top; each is one rectangle per year, placed on top of the ones below
   const segs = [
     ["none", "No project named", "#D5DBE6", null],
     ["other", "Other named projects", "#97A6BF", null],
@@ -1364,8 +1330,8 @@ function build() {
       .attr("opacity", (yearRecord) => (yearRecord.yearIndex === yearCount - 1 ? 0.65 : 1))
       .style("pointer-events", "none");
   });
-  // Hover and click: one invisible column per year, from the top of the chart to the axis.
-  // The whole bar is the target (even a thin 2019 bar is easy to hit), and the tooltip lists the three parts.
+  // hover and click: one invisible column per year, from the top of the chart down to the axis
+  // the whole bar is the target so thin bars are easy to hit, and the tooltip lists the three parts
   const hoverOutline = barLayer
     .append("rect")
     .attr("class", "barhi")
@@ -1424,7 +1390,7 @@ function build() {
     .attr("y", barBottom + 16)
     .attr("text-anchor", "middle")
     .text("to 31 Aug");
-  // years under bars
+  // year labels under the bars
   heatmapSvg
     .append("g")
     .selectAll("text")
@@ -1437,14 +1403,14 @@ function build() {
     .attr("opacity", (year, yearIndex) => (yearIndex === yearCount - 1 ? 0 : 1))
     .text((year) => year);
 
-  // ----- C2: the jump from a card to its chart -----------------
-  // Clicking a discovery card scrolls to the matching part of the chart and outlines it for a moment.
-  // The jump never changes the selected project or year, so it does not interfere with exploring.
-// Two overlay layers that ignore the mouse: the outline flash and the selected-period outline.
+  // ----- jump from a card to its chart -----
+  // clicking a discovery card scrolls to the matching part of the chart and outlines it for a moment
+  // it never changes the selected project or year
+  // two overlay layers that ignore the mouse: the flash outline and the selected-period outline
   const flashLayer = heatmapSvg.append("g").style("pointer-events", "none");
   const periodOutline = heatmapSvg.append("g").style("pointer-events", "none");
   const prefersReducedMotion = matchMedia("(prefers-reduced-motion:reduce)").matches;
-// flash: draws an outline around a part of the chart, then fades it out.
+  // flash: draws an outline around part of the chart, then fades it out
   const flash = (topY, bottomY, outlineColor) => {
     flashLayer.selectAll("*").remove();
     const outline = flashLayer
@@ -1470,7 +1436,7 @@ function build() {
       .attr("fill-opacity", 0)
       .remove();
   };
-  // goTo: converts a position inside the SVG into a page position and scrolls there smoothly.
+  // goTo: turns a position inside the svg into a page position and scrolls there smoothly
   const goTo = (yUnits) => {
     const svgBox = heatmapSvg.node().getBoundingClientRect(),
       scaleToScreen = svgBox.width / canvasWidth;
@@ -1479,15 +1445,15 @@ function build() {
       behavior: prefersReducedMotion ? "auto" : "smooth",
     });
   };
-// The vertical range of each target, in SVG units, for the scroll and the flash.
+  // vertical range of each target in svg units, used for the scroll and the flash
   const aptBlockTop = aptTop - 62,
     aptBlockBottom = aptTop + shownAptProjects.length * rowHeight + 6,
     landBlockTop = landTop - 34,
     landBlockBottom = hmBottom + 6,
     barsBlockTop = barTop - 36,
     barsBlockBottom = barBottom + 28;
-// window.__nav: the three jumps the cards call. Each scrolls, then flashes after 450 ms (so the scroll has started).
-//   // "apt" first switches the heatmap to peak-year order, because that is what card 3 is about.
+  // window.__nav: the three jumps the cards call; each scrolls, then flashes after 450 ms (so the scroll has started)
+  // "apt" switches to peak-year order first, because card 3 is about that
   window.__nav = {
     bars: () => {
       goTo(barsBlockTop - 4);
@@ -1504,9 +1470,9 @@ function build() {
     },
   };
 
-  // ----- C2: legend --------------------------------------------
-  // Two colour bars (blue = apartments, orange = land) with a few tick values, plus a "no sales" swatch.
-  // Built from the same colour scales as the cells, so the legend can never disagree with the chart.
+  // ----- legend -----
+  // two colour bars (blue = apartments, orange = land) with a few tick values, plus a "no sales" swatch
+  // made from the same colour scales as the cells, so it always matches the chart
   (function () {
     const legend = d3.select("#leg");
     const aptGradientStops = d3
@@ -1526,11 +1492,11 @@ function build() {
     <div class="lg k"><span><i class="sw" style="background:var(--emp);border:1px solid var(--grid)"></i>no sales</span><span><i class="sw" style="background:#D5DBE6"></i>plots with no project name</span></div>`);
   })();
 
-  // ----- C2: selection and linking -----------------------------
-  // Clicking a row or a year only changes state and calls render().
-  // emit() also sends a message to the page that contains the other team views, and the
-  // listener below receives their messages. Message format: {source:"rising-tide", view, type:"select", comm, year}
-// selectRow: click again to deselect. Clearing communityFromOtherView drops any community chosen in another view.
+  // ----- selection and linking -----
+  // a click on a row or a year only changes the state and calls render()
+  // emit() also sends a message to the page with the other views, and the listener below
+  // receives theirs. message format: {source:"rising-tide", view, type:"select", comm, year}
+  // selectRow: clicking again deselects; it also clears any community chosen in another view
   function selectRow(project) {
     state.communityFromOtherView = null;
     state.selectedProject = state.selectedProject && state.selectedProject.id === project.id ? null : project;
@@ -1539,7 +1505,7 @@ function build() {
     pulse("detail");
     if (state.selectedYear != null) pulse("yearCard");
   }
-// selectYear: same idea for the year headings and the land bars.
+  // selectYear: same idea for the year headings and the land bars
   function selectYear(year) {
     state.selectedYear = year;
     emit();
@@ -1547,7 +1513,7 @@ function build() {
     pulse("yearCard");
     if (state.selectedProject) pulse("detail");
   }
-  // pulse: a short glow around a side card so the person sees which card just changed.
+  // pulse: short glow on a side card so you can see which one just changed
   function pulse(elementId) {
     const element = document.getElementById(elementId);
     if (!element) return;
@@ -1556,12 +1522,12 @@ function build() {
     element.classList.add("pulse");
   }
   function selectComm(community) {
-    // A community was chosen in another team view: drop our own selection and highlight its projects.
+    // a community was chosen in another view: drop our own selection and highlight its projects
     state.selectedProject = null;
-    state.communityFromOtherView = community == null ? null : community; // keep the community, highlight every matching project
+    state.communityFromOtherView = community == null ? null : community; // keep the community and highlight every matching project
   }
-// emit: tells the page that contains the other views what is selected here (community and year).
-//   // The try/catch keeps the file working when it is opened on its own.
+  // emit: tells the page with the other views what is selected here (community and year)
+  // the try/catch keeps the file working when it is opened on its own
   function emit() {
     try {
       parent.postMessage(
@@ -1576,8 +1542,8 @@ function build() {
       );
     } catch (error) {}
   }
-// The window.__w2 flag makes sure the message listener is added only once, even though build() runs again for Top 20.
-//   // It listens for the other views' messages and redraws; it ignores this view's own messages.
+  // window.__w2 makes sure the listener is only added once, even though build() runs again for Top 20
+  // it listens to the other views' messages and redraws, and ignores this view's own messages
   if (!window.__w2) {
     window.__w2 = 1;
     addEventListener("message", (event) => {
@@ -1588,14 +1554,14 @@ function build() {
       render();
     });
   }
-  // drawDetail: the "project history" chart for the selected project (hidden when nothing is selected).
+  // drawDetail: the project history chart for the selected project (hidden when nothing is selected)
   function drawDetail() {
     const project = state.selectedProject && state.selectedProject.id ? projects.find((candidate) => candidate.id === state.selectedProject.id) : null;
     const detailSvg = d3.select("#dsv");
     detailSvg.selectAll("*").remove();
     detailSvg.style("display", project ? "block" : "none");
     const chips = d3.select("#dChips").html("");
-// add(value, label): adds one statistic tile above the chart.
+    // addStat(value, label): adds one number tile above the chart
     const addStat = (value, label) => {
       const tile = chips.append("div").attr("class", "stat");
       tile.append("b").text(value);
@@ -1610,7 +1576,7 @@ function build() {
       return;
     }
     d3.select("#detail").classed("empty", false);
-// vals = the 12 yearly counts of the selected project; sh = the same as shares of the year.
+    // yearlyCounts = the 12 yearly counts of the selected project, yearlyShares = the same as shares of each year
     const isApartment = project.kind === "apt",
       yearlyCounts = isApartment ? project.apt : project.land,
       yearlyShares = isApartment ? project.aptShares : project.landShares;
@@ -1630,8 +1596,8 @@ function build() {
       addStat(formatCount(d3.max(yearlyCounts)) + " in " + years[yearlyCounts.indexOf(d3.max(yearlyCounts))], "most plots in one year");
     }
     addStat(String(project.comm), "community · " + project.commName);
-    // chart sized for the side card (330 x 168 units); highlights the selected year if there is one
-// Chart geometry (SVG units): DW = width, hh = height, ml/mr = left/right margin, top/bot = plot area.
+    // chart sized for the side card (330 x 168 units), it highlights the selected year if there is one
+    // chart size in svg units: chartWidth, chartHeight, marginLeft / marginRight, plotTop / plotBottom = plot area
     const chartWidth = 380,
       chartHeight = 274,
       marginLeft = 42,
@@ -1672,7 +1638,7 @@ function build() {
     }
     const peakIndex = yearlyCounts.indexOf(d3.max(yearlyCounts));
     const selectedYearIndex = state.selectedYear != null ? years.indexOf(state.selectedYear) : -1;
-// One bar per year. Heights start at 0 and grow to the value (transition), unless reduced motion is on.
+    // one bar per year; heights grow from 0 to the value (transition) unless reduced motion is on
     detailSvg
       .selectAll("rect.bar")
       .data(years)
@@ -1742,7 +1708,7 @@ function build() {
       .style("font-size", "11px")
       .text(isApartment ? "Flats sold" : "Land plots sold");
   }
-  // drawYear: the "Selected year" card in the side panel, computed from the same counts as the charts.
+  // drawYear: the "Selected year" card in the side panel, from the same counts as the charts
   function drawYear() {
     const container = d3.select("#yBody");
     if (state.selectedYear == null) {
@@ -1767,7 +1733,7 @@ function build() {
       <div class="ylist"><span class="yl">Biggest share of flat sales</span>${topThree.map((project, rank) => `<div><i>${rank + 1}</i>${escapeHtml(project.name)}<em>${formatPercentOneDecimal(project.aptShares[yearIndex])}</em></div>`).join("")}</div>
       <div class="ynote">${formatPercentWhole(ledShare)} of the year's land plots were in the ${landProjects.length} land-led places.</div>`);
   }
-  // render: redraws everything that depends on state: selection outline, dimmed rows, year band, detail chart.
+  // render: redraws everything that depends on the state: selection outline, dimmed rows, year band, detail chart
   function render() {
     drawDetail();
     const selectedProject = state.selectedProject,
@@ -1783,7 +1749,7 @@ function build() {
       .attr("stroke-width", 1.5);
     rowGroups.style("opacity", (project) => (selectedProject ? (project.id === selectedProject.id ? 1 : 0.45) : community == null || project.comm === community ? 1 : 0.55));
     // when a year is chosen, cells outside its three-year period fade so the period stands out
-    // the chosen year's three-year period is outlined; cell colours stay at full strength so they remain comparable
+    // the period is outlined; cell colours stay at full strength so they can still be compared
     periodOutline.selectAll("*").remove();
     if (state.selectedYear != null) {
       const [periodStartYear, periodEndYear] = yearsInPeriod(periodIndexOfYear(state.selectedYear));
@@ -1816,7 +1782,7 @@ function build() {
           .getElementById(selectedProject ? "detail" : "yearCard")
           .scrollIntoView({ behavior: prefersReducedMotion ? "auto" : "smooth", block: "start" });
     }
-// Mark the selected year heading, then draw the shaded band and outline behind that year's column.
+    // mark the selected year heading, then draw the band and outline behind that year's column
     d3.selectAll(".yh").classed("sel", (year) => year === state.selectedYear);
     periodBands.selectAll("*").remove();
     if (state.selectedYear != null) {
@@ -1843,7 +1809,7 @@ function build() {
         .attr("stroke-width", 1.4)
         .attr("rx", 3);
     }
-// status line: says which projects lie in a community chosen in another view.
+    // status line: says which projects are in a community chosen in another view
     const statusParts = [];
     if (!selectedProject && state.communityFromOtherView != null) {
       const projectsInCommunity = shownProjects.filter((project) => project.comm === state.communityFromOtherView);
@@ -1855,7 +1821,7 @@ function build() {
     }
     d3.select("#status").text(statusParts.join("  |  "));
   }
-// "Clear" button and the Esc key: reset the selection, the community and the year, then redraw.
+  // "Clear" button and Esc key: reset the selection, the community and the year, then redraw
   d3.select("#bClear").on("click", () => {
     state.selectedProject = null;
     state.communityFromOtherView = null;
@@ -1876,8 +1842,8 @@ function build() {
     });
   }
 
-  // ----- C2: evidence table ------------------------------------
-  // The same numbers as a table, for reading them without hovering. The button shows or hides it.
+  // ----- evidence table -----
+  // the same numbers as a table, so you can read them without hovering; the button shows or hides it
   (function () {
     const tableWrapper = d3.select("#tableWrap");
     const table = tableWrapper.append("table");
@@ -1919,13 +1885,13 @@ function build() {
     });
   })();
 
-  // Final step of build(): place the rows (no animation the first time) and draw the current selection.
+  // last step of build(): place the rows (no animation the first time) and draw the current selection
   applyOrder(false);
   render();
 }
-// Draw everything once when the page loads.
+// draw everything once when the page loads
 build();
-// "All projects" / "Top 20" buttons: change the number of apartment rows, then redraw.
+// "All projects" / "Top 20" buttons change the number of apartment rows, then redraw
 const setTop = (onlyTopTwenty) => {
   if (state.onlyTopTwenty === onlyTopTwenty) return;
   state.onlyTopTwenty = onlyTopTwenty;
@@ -1936,14 +1902,12 @@ const setTop = (onlyTopTwenty) => {
 d3.select("#bAll").on("click", () => setTop(false));
 d3.select("#bTop").on("click", () => setTop(true));
 
-// ============================================================
-// C3  BEHIND THE DATA: the three collapsible explanation topics
-// ============================================================
-// The text is written as templates, so every number comes from the calculations above.
-// grp / plain / dqp / detail are small helpers that return HTML for one kind of block.
-// t1, t2, t3 are the three topics; the loop at the end turns them into <details> elements.
+// ---------- behind the data ----------
+// the three collapsible explanation topics; the text is written as templates, so every number comes from the calculations above
+// dataSourceHtml, waveTestHtml and landPredictionHtml are the three topics; the loop at the end turns them into <details>
+// block, plain, qualityBlock and findingsTable are small helpers that return html
 (function () {
-// pN / pL: the share of flat sales / land plots that have no project name.
+  // aptNoNameShare / landNoNameShare: share of flat sales / land plots that have no project name
   const aptNoNameShare = formatPercentWhole(d3.sum(DATA.aptNoProj) / d3.sum(totalAptByYear)),
     landNoNameShare = formatPercentWhole(d3.sum(DATA.landNoProj) / d3.sum(totalLandByYear));
   const pValueText = waveTest.pValue < 0.001 ? "p&lt;0.001" : "p=" + waveTest.pValue.toFixed(3);
@@ -1962,7 +1926,7 @@ d3.select("#bTop").on("click", () => setTop(true));
     `<details class="dqd"><summary>Detailed Data Quality Findings</summary><dl>${findingRows
       .map(([label, text]) => `<div><dt>${label}</dt><dd>${text}</dd></div>`)
       .join("")}</dl></details>`;
-// t1: "Where does the data come from?" (definitions, projects shown, shares and colours, limits, data quality).
+  // dataSourceHtml: "Where does the data come from?" (definitions, projects shown, shares and colours, limits, data quality)
   const dataSourceHtml =
     block("Source and definitions", [
       `Dubai Land Department sales: a 10% random sample (89,212 rows). Mortgages and gifts are not used.`,
@@ -2031,7 +1995,7 @@ d3.select("#bTop").on("click", () => setTop(true));
       ],
     ]) +
     `</div>`;
-// t2: "Is the apartment wave real?" (the shuffle test, in numbers and in plain terms).
+  // waveTestHtml: "Is the apartment wave real?" (the shuffle test, in numbers and in plain words)
   const waveTestHtml =
     block("The test", [
       `${waveTest.shuffleCount} seeded shuffles of each project's years; ${waveTest.projectCount} projects, 2015–2025. It uses yearly market share, not raw counts.`,
@@ -2044,7 +2008,7 @@ d3.select("#bTop").on("click", () => setTop(true));
       `<b>Year-to-year correlation</b>: is a project that is high one year high the next? (1 = always, 0 = no link). Shuffled values sit slightly below 0 (about −0.1 with 11 years): a normal small-sample effect.`,
       `<b>${pValueText}</b>: shuffled data almost never matched the real result. The pattern is not just the sort, but this does not make it strong or prove that development moved geographically.`,
     ]);
-// t3: "Can land sales predict future development?" (the rank correlation, computed in Python).
+  // landPredictionHtml: "Can land sales predict future development?" (the rank correlation, computed in Python)
   const landPredictionHtml =
     block("The comparison", [
       `Projects with the most land sold in 2015–19 did not become apartment hotspots in 2022–25: rank correlation −0.28 across 102 projects (computed in Python). Each project's named land plots in 2015–19 are compared with its named flat sales in 2022–25; a project missing from a list counts as 0.`,
@@ -2053,13 +2017,13 @@ d3.select("#bTop").on("click", () => setTop(true));
       `<b>Rank correlation</b> compares how projects are ordered. Negative: projects high on land in 2015–19 tended to rank lower on apartments in 2022–25.`,
     ]);
 
-// Small line icons for the three topics.
+  // small line icons for the three topics
   const icons = {
     t1: '<svg viewBox="0 0 24 24" aria-hidden="true"><ellipse cx="12" cy="6" rx="7" ry="3" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M5 6v6c0 1.7 3.1 3 7 3s7-1.3 7-3V6M5 12v6c0 1.7 3.1 3 7 3s7-1.3 7-3v-6" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>',
     t2: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7h4l10 10h4M3 17h4l3-3M14 10l3-3h4M18 4l3 3-3 3M18 14l3 3-3 3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>',
     t3: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 18l5-6 4 3 5-7" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M17 8l4-3" fill="none" stroke="#E0701E" stroke-width="1.8" stroke-dasharray="2 2.5" stroke-linecap="round"/></svg>',
   };
-// Each topic = [id, title, one-line subtitle, body HTML].
+  // each topic = [id, title, one-line subtitle, body html]
   const topics = [
     [
       "t1",
@@ -2080,7 +2044,7 @@ d3.select("#bTop").on("click", () => setTop(true));
       landPredictionHtml,
     ],
   ];
-// Build the three <details> elements: a summary row (icon, title, subtitle, arrow) and the body.
+  // builds the three <details> elements: a summary row (icon, title, subtitle, arrow) and the body
   const root = d3.select("#bd").html("");
   topics.forEach(([topicId, title, subtitle, body]) => {
     const topicElement = root.append("details").attr("class", "topic").attr("id", topicId);
